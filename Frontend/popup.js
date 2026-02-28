@@ -28,6 +28,7 @@ document.getElementById("openPageBtn").addEventListener("click", () => {
 function display(data) {
 
     document.getElementById("output").innerText =
+        "AI ANALYSIS:\n" + data.aiAnalysis + "\n\n"+
         "ARCHITECTURE:\n" + data.architecture + "\n\n" +
         "FRAMEWORKS:\n" + data.frameworks.join(", ") + "\n\n" +
         "ENTRY POINTS:\n" + data.structure.entryPoints.join(", ") + "\n\n" +

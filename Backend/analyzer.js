@@ -1,129 +1,177 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
+const Groq = require("groq-sdk");
+require("dotenv").config();
 
-function analyzeProject(rootPath) {
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
+});
 
-    const structure = {
-        files: [],
-        routes: [],
-        services: [],
-        models: [],
-        controllers: [],
-        entryPoints: [],
-        dbFiles: [],
-        frameworks: new Set(),
-        flow: []
-    };
+/* -----------------------
+   RECURSIVE FILE SCANNER
+------------------------ */
+function scanDirectory(dir, fileList = []) {
+  const files = fs.readdirSync(dir);
 
-    function walk(dir) {
-        fs.readdirSync(dir).forEach(file => {
-            const fullPath = path.join(dir, file);
-            const stat = fs.statSync(fullPath);
+  files.forEach(file => {
+    const fullPath = path.join(dir, file);
+    const stat = fs.statSync(fullPath);
 
-            if (stat.isDirectory() &&
-                file !== 'node_modules' &&
-                file !== '.git' &&
-                file !== 'dist'
-            ) {
-                walk(fullPath);
-            } else if (stat.isFile()) {
+    if (stat.isDirectory()) {
+      scanDirectory(fullPath, fileList);
+    } else {
+      fileList.push(fullPath);
+    }
+  });
 
-                structure.files.push(fullPath);
-                const lower = file.toLowerCase();
+  return fileList;
+}
 
-                // Entry detection
-                if (
-                    lower === 'server.js' ||
-                    lower === 'app.js' ||
-                    lower === 'main.py' ||
-                    lower === 'index.js'
-                ) {
-                    structure.entryPoints.push(file);
-                }
+/* -----------------------
+   TECH STACK DETECTION
+------------------------ */
+function detectTechStack(files) {
+  const frameworks = new Set();
+  const languages = new Set();
 
-                if (lower.includes('route'))
-                    structure.routes.push(file);
+  files.forEach(file => {
+    if (file.endsWith(".js")) languages.add("JavaScript");
+    if (file.endsWith(".ts")) languages.add("TypeScript");
+    if (file.endsWith(".py")) languages.add("Python");
+    if (file.endsWith(".java")) languages.add("Java");
 
-                if (lower.includes('service'))
-                    structure.services.push(file);
-
-                if (lower.includes('controller'))
-                    structure.controllers.push(file);
-
-                if (lower.includes('model'))
-                    structure.models.push(file);
-
-                if (lower.includes('db'))
-                    structure.dbFiles.push(file);
-
-                const content = fs.readFileSync(fullPath, 'utf-8');
-
-                if (content.includes('express'))
-                    structure.frameworks.add('Express');
-
-                if (content.includes('Flask'))
-                    structure.frameworks.add('Flask');
-
-                if (content.includes('app.listen'))
-                    structure.flow.push(`Server starts in ${file}`);
-
-                if (content.includes('router.get') || content.includes('app.get'))
-                    structure.flow.push(`HTTP route defined in ${file}`);
-            }
-        });
+    if (file.includes("package.json")) {
+      const content = fs.readFileSync(file, "utf8");
+      if (content.includes("express")) frameworks.add("Express");
+      if (content.includes("react")) frameworks.add("React");
+      if (content.includes("next")) frameworks.add("Next.js");
+      if (content.includes("mongoose")) frameworks.add("MongoDB");
     }
 
-    walk(rootPath);
+    if (file.includes("requirements.txt")) {
+      frameworks.add("Python Backend");
+    }
+  });
 
-    const architecture = detectArchitecture(structure);
-
-    const onboardingGuide = generateOnboarding(structure);
-
-    const flowDiagram = generateFlowDiagram(structure);
-
-    return {
-        architecture,
-        frameworks: [...structure.frameworks],
-        structure,
-        onboardingGuide,
-        flowDiagram
-    };
+  return {
+    languages: [...languages],
+    frameworks: [...frameworks]
+  };
 }
 
-function detectArchitecture(s) {
+/* -----------------------
+   STRUCTURE DETECTION
+------------------------ */
+function detectStructure(files) {
+  const structure = {
+    entryPoints: [],
+    routes: [],
+    services: [],
+    models: [],
+    flow: []
+  };
 
-    if (s.routes.length && s.services.length && s.models.length)
-        return "Layered MVC Architecture";
+  files.forEach(file => {
+    if (file.endsWith("index.js") || file.endsWith("app.js"))
+      structure.entryPoints.push(file);
 
-    if (s.routes.length && s.services.length)
-        return "Layered Express API";
+    if (file.toLowerCase().includes("route"))
+      structure.routes.push(file);
 
-    if (s.dbFiles.length)
-        return "Monolithic API with Direct DB Access";
+    if (file.toLowerCase().includes("service"))
+      structure.services.push(file);
 
-    return "Basic Monolithic Application";
+    if (file.toLowerCase().includes("model"))
+      structure.models.push(file);
+  });
+
+  structure.flow.push("Client → Routes → Services → Models → Database");
+
+  return structure;
 }
 
-function generateOnboarding(s) {
-
-    return {
-        startHere: s.entryPoints.length ? s.entryPoints[0] : "No clear entry file detected",
-        modifyAPI: s.routes.length ? s.routes[0] : "No route layer found",
-        businessLogic: s.services.length ? s.services[0] : "Service layer not separated",
-        database: s.dbFiles.length ? s.dbFiles[0] : "Database module not clearly separated"
-    };
+/* -----------------------
+   ARCHITECTURE DETECTION
+------------------------ */
+function detectArchitecture(structure) {
+  if (structure.routes.length && structure.services.length && structure.models.length)
+    return "Layered Architecture (Route → Service → Model)";
+  if (structure.routes.length && !structure.services.length)
+    return "Controller-based Architecture";
+  return "Basic / Unknown Architecture";
 }
 
-function generateFlowDiagram(s) {
+/* -----------------------
+   SUMMARIZE REPO CONTENT
+------------------------ */
+function getRepoSummary(files) {
+  let summary = "";
 
-    return `
-graph TD
-    Client --> Routes
-    Routes --> Controllers
-    Controllers --> Services
-    Services --> Models
-    Models --> Database
-`;
+  files.slice(0, 20).forEach(file => {
+    try {
+      const content = fs.readFileSync(file, "utf8").slice(0, 1000);
+      summary += `\nFILE: ${file}\n${content}\n`;
+    } catch {}
+  });
+
+  return summary;
+}
+
+/* -----------------------
+   GROQ AI ANALYSIS
+------------------------ */
+async function askGroq(summary) {
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      {
+        role: "system",
+        content: "You are a senior software architect analyzing a GitHub repository."
+      },
+      {
+        role: "user",
+        content: `Analyze this codebase and explain:
+        - Overall architecture
+        - Tech stack
+        - Folder structure meaning
+        - How data flows
+        - How to modify APIs
+
+        CODE SNIPPETS:
+        ${summary}`
+      }
+    ]
+  });
+
+  return completion.choices[0].message.content;
+}
+
+/* -----------------------
+   MAIN ANALYZER FUNCTION
+------------------------ */
+async function analyzeProject(projectPath) {
+  const files = scanDirectory(projectPath);
+
+  const techStack = detectTechStack(files);
+  const structure = detectStructure(files);
+  const architecture = detectArchitecture(structure);
+  const summary = getRepoSummary(files);
+
+  const aiAnalysis = await askGroq(summary);
+
+  return {
+    architecture,
+    frameworks: techStack.frameworks,
+    languages: techStack.languages,
+    structure,
+    aiAnalysis,
+    onboardingGuide: {
+      startHere: structure.entryPoints[0] || "Check root index/app file",
+      modifyAPI: structure.routes[0] || "Find route files",
+      businessLogic: structure.services[0] || "Find service layer",
+      database: structure.models[0] || "Find model files"
+    }
+  };
 }
 
 module.exports = { analyzeProject };
