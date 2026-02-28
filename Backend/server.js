@@ -15,10 +15,33 @@ app.use(express.json());
 // ==============================
 // AI GitHub Analysis Route
 // ==============================
+//change 
+async function fetchGitHubMetadata(repoUrl) {
+  const parts = repoUrl.replace(".git", "").split("/");
+  const owner = parts[parts.length - 2];
+  const repo = parts[parts.length - 1];
 
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
+
+  const response = await axios.get(apiUrl);
+
+  return {
+    name: response.data.name,
+    description: response.data.description,
+    stars: response.data.stargazers_count,
+    forks: response.data.forks_count,
+    watchers: response.data.watchers_count,
+    issues: response.data.open_issues_count,
+    language: response.data.language,
+    created: response.data.created_at,
+    updated: response.data.updated_at,
+    owner: response.data.owner.login
+  };
+}
 app.post("/github", async (req, res) => {
   try {
     const repoUrl = req.body.repo;
+    const githubMeta = await fetchGitHubMetadata(repoUrl);
 
     if (!repoUrl) {
       return res.status(400).json({ error: "GitHub URL is required" });
@@ -44,6 +67,9 @@ app.post("/github", async (req, res) => {
             role: "user",
             content: `
 Analyze this project metadata and explain clearly:
+GitHub Metadata:
+${JSON.stringify(githubMeta, null, 2)}
+
 
 1. Overall architecture
 2. Core components
@@ -67,6 +93,7 @@ ${metadata}
 
     res.json({
       summary: aiResponse.data.choices[0].message.content,
+      github: githubMeta
     });
 
   } catch (err) {
