@@ -1,46 +1,127 @@
-const express = require('express');
-const multer = require('multer');
-const AdmZip = require('adm-zip');
-const path = require('path');
-const fs = require('fs');
-const simpleGit = require('simple-git');
-const { analyzeProject } = require('./analyzer');
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+const simpleGit = require("simple-git");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
 
-app.use(express.static('public'));
+app.use(cors());
 app.use(express.json());
 
-app.post('/upload', upload.single('zipfile'), async (req, res) => {
-    try {
-        const zipPath = req.file.path;
-        const extractPath = path.join(__dirname, 'uploads', Date.now().toString());
+// ==============================
+// AI GitHub Analysis Route
+// ==============================
 
-        const zip = new AdmZip(zipPath);
-        zip.extractAllTo(extractPath, true);
+app.post("/github", async (req, res) => {
+  try {
+    const repoUrl = req.body.repo;
 
-        const result = analyzeProject(extractPath);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (!repoUrl) {
+      return res.status(400).json({ error: "GitHub URL is required" });
     }
-});
 
-app.post('/github', async (req, res) => {
-    try {
-        const repoUrl = req.body.repo;
-        const repoPath = path.join(__dirname, 'uploads', Date.now().toString());
+    const repoPath = path.join(__dirname, "uploads", Date.now().toString());
 
-        await simpleGit().clone(repoUrl, repoPath);
-        const result = analyzeProject(repoPath);
+    await simpleGit().clone(repoUrl, repoPath);
 
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const metadata = extractMetadata(repoPath);
+
+    const aiResponse = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a senior software architect helping developers understand unfamiliar codebases.",
+          },
+          {
+            role: "user",
+            content: `
+Analyze this project metadata and explain clearly:
+
+1. Overall architecture
+2. Core components
+3. Execution flow
+4. Where a new developer should start
+5. Technologies used
+
+Project Metadata:
+${metadata}
+`,
+          },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.json({
+      summary: aiResponse.data.choices[0].message.content,
+    });
+
+  } catch (err) {
+    console.error("GROQ ERROR:", err.response?.data || err.message);
+    res.status(500).json({
+      error: err.response?.data || err.message,
+    });
+  }
+}); // ✅ properly close route
+
+// ==============================
+// Metadata Extractor
+// ==============================
+
+function extractMetadata(rootPath) {
+  let structure = "";
+  let importantFiles = "";
+
+  function walk(dir, depth = 0) {
+    fs.readdirSync(dir).forEach((file) => {
+      const fullPath = path.join(dir, file);
+      const stat = fs.statSync(fullPath);
+
+      if (depth < 2) {
+        structure += "  ".repeat(depth) + "- " + file + "\n";
+      }
+
+      if (stat.isDirectory() && file !== "node_modules" && file !== ".git") {
+        walk(fullPath, depth + 1);
+      }
+
+      if (file === "package.json" || file === "README.md") {
+        importantFiles += `\n\n--- ${file} ---\n`;
+        importantFiles += fs
+          .readFileSync(fullPath, "utf8")
+          .slice(0, 3000);
+      }
+    });
+  }
+
+  walk(rootPath);
+
+  return `
+Folder Structure:
+${structure}
+
+Important Files:
+${importantFiles}
+`;
+}
+
+// ==============================
+// Start Server
+// ==============================
 
 app.listen(3000, () => {
-    console.log("🚀 Server running on http://localhost:3000");
+  console.log("🚀 Server running on http://localhost:3000");
 });
