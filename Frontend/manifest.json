@@ -9,7 +9,8 @@
   },
 
   "permissions": [
-    "storage"
+    "storage",
+    "tabs"
   ],
 
   "host_permissions": [

@@ -19,6 +19,11 @@ document.getElementById("analyze").addEventListener("click", async () => {
             "Backend server not running.\nStart server.js first.";
     }
 });
+document.getElementById("openPageBtn").addEventListener("click", () => {
+  chrome.tabs.create({
+    url: chrome.runtime.getURL("report.html")
+  });
+});
 
 function display(data) {
 
