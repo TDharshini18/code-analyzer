@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 350px;
+      padding: 20px;
+      font-family: Arial;
+      background: #121212;
+      color: white;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-top: 10px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      background: #3a86ff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    pre {
+      margin-top: 15px;
+      background: #1e1e1e;
+      padding: 10px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+<h2>🧠 Codebase X-Ray</h2>
+
+<input type="text" id="repo" placeholder="https://github.com/user/repo"/>
+<button id="analyze">Analyze</button>
+
+<pre id="output"></pre>
+
+<script src="popup.js"></script>
+</body>
+</html>
